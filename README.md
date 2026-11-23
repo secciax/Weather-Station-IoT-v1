@@ -8,7 +8,7 @@ This repository contains **Phase 1** of a Computer Engineering bachelor thesis p
 
 | Microcontroller Modules | Provisional Outdoor Enclosure | Enclosure Internal Assembly |
 | :---: | :---: | :---: |
-| ![Arduino Boards](images/moduli.jpeg) | ![Outdoor Case Front](images/caseA.jpeg) | ![Outdoor Case Inside](images/caseB.jpeg) |
+| ![Arduino Boards](images/moduli.jpg) | ![Outdoor Case Front](images/caseA.jpg) | ![Outdoor Case Inside](images/caseB.jpg) |
 | *Arduino Nano 33 BLE Sense Rev2 & Nano RP2040 Connect* | *Provisional weatherproof enclosure with 5V solar panel* | *Internal power management setup (CN3065 charger & Li-Po)* |
 
 | ThingSpeak Cloud Dashboard |
