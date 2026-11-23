@@ -1,237 +1,194 @@
-# 🌤️ IoT Weather Station (BLE & MQTT) — Version 1.0
+# 🌤️ IoT Weather Station (BLE & MQTT) — Phase 1
 
-Prototipo di **Stazione Meteo IoT** a due nodi basato su microcontrollori Arduino, architettura di comunicazione a due livelli (**BLE** per la local area network sensoristica ed **MQTT** per l'offloading cloud) e sistema di alimentazione solare auto-sostenibile per il nodo esterno.
+A two-node **IoT Weather Station** prototype based on Arduino microcontrollers, featuring a two-tier communication architecture (**Bluetooth Low Energy** for short-range sensor data acquisition and **MQTT via Wi-Fi** for cloud offloading), powered by a self-sustaining solar energy harvesting system housed inside a provisional outdoor enclosure.
 
-Questo repository contiene la **Fase 1** di un progetto di tesi in Ingegneria Informatica incentrato sul monitoraggio microclimatico remoto, sull'ottimizzazione dei consumi energetici e sulla futura integrazione di Edge AI e comunicazione a lungo raggio (LoRaWAN).
+This repository contains **Phase 1** of a Computer Engineering bachelor thesis project focused on microclimate monitoring, embedded system integration, power consumption evaluation, and laying the groundwork for long-range LPWAN (LoRa) and intelligence at the edge (Edge AI / Fog AI).
 
-## 📸 Galleria del Progetto
+## 📸 Gallery
 
-| Hardware & Moduli | Case Esterno Solare (Vista 1) | Case Esterno Solare (Vista 2) | 
-| ----- | ----- | ----- | 
-|  |  |  | 
-| *Arduino Nano 33 BLE Sense Rev2 & Nano RP2040 Connect* | *Custodia provvisoria per esterni con pannello solare 5V integrated* | *Dettaglio del passaggio cavi e alloggiamento sensori* | 
+| Microcontroller Modules | Provisional Outdoor Enclosure | Enclosure Internal Assembly |
+| :---: | :---: | :---: |
+| ![Arduino Boards](images/moduli.jpeg) | ![Outdoor Case Front](images/caseA.jpeg) | ![Outdoor Case Inside](images/caseB.jpeg) |
+| *Arduino Nano 33 BLE Sense Rev2 & Nano RP2040 Connect* | *Provisional weatherproof enclosure with 5V solar panel* | *Internal power management setup (CN3065 charger & Li-Po)* |
 
-| Dashboard Grafici ThingSpeak | Monitoraggio LCD locale | 
-| ----- | ----- | 
-|  |  | 
-| *Serie temporali (Temp, Umidità, Pressione) su ThingSpeak* | *Display LCD 16x2 I2C con aggiornamento live* | 
+| ThingSpeak Cloud Dashboard |
+| :---: |
+| ![ThingSpeak Dashboard](images/dashboard.png) |
+| *Time-series analytics on ThingSpeak (Temperature, Humidity, Pressure)* |
 
-## 🏗️ Architettura di Sistema
+> 📌 **Note on Display Hardware:** The 16x2 I2C LCD screen is currently detached from the physical setup shown in the hardware photo above. However, full display initialization, update routines, and notification status logic are fully implemented and driven by the indoor gateway firmware (`Modulo_Interno.ino`).
 
-Il sistema si suddivide in due entità hardware complementari che separano la fase di **sensing a basso consumo** dalla fase di **processing e connettività di rete (Gateway)**.
+---
 
-```
+## 🏗️ System Architecture
+
+The system is split into two complementary hardware units, separating low-power **environmental sensing** from **gateway processing and cloud connectivity**.
+
+```mermaid
 flowchart TD
-    subgraph OUTDOOR[" 🏕️ Modulo Esterno (Sensor Node / BLE Peripheral) "]
-        SOLAR["☀️ Pannello Solare 5V"] -->|Ricarica| CN["🔋 Caricabatterie CN3065"]
-        BAT["⚡ Batt. Li-Po 3.7V 1S"] <--> CN
+    subgraph OUTDOOR[" 🏕️ Outdoor Module (Sensor Node / BLE Peripheral) "]
+        SOLAR["☀️ 5V Solar Panel"] -->|Charging Current| CN["🔋 CN3065 Solar Charger Module"]
+        BAT["⚡ 3.7V 1S Li-Po Battery"] <--> CN
         CN -->|VIN / GND| BLE_SENSE["📟 Arduino Nano 33 BLE Sense Rev2"]
-        SENS1["🌡️ HS300x (Temp & Umid)"] -->|I2C On-board| BLE_SENSE
-        SENS2["⏲️ LPS22HB (Pressione)"] -->|I2C On-board| BLE_SENSE
+        SENS1["🌡️ HS300x (Temp & Humidity)"] -->|On-board I2C| BLE_SENSE
+        SENS2["⏲️ LPS22HB (Pressure)"] -->|On-board I2C| BLE_SENSE
     end
 
-    subgraph PAN[" 📡 PAN (Bluetooth Low Energy GATT) "]
+    subgraph PAN[" 📡 Personal Area Network (BLE GATT) "]
         BLE_SENSE -.->|"Advertising & NOTIFY<br/>(10-15 min interval)"| RP2040
     end
 
-    subgraph INDOOR[" 🏠 Modulo Interno (Gateway / BLE Central) "]
+    subgraph INDOOR[" 🏠 Indoor Module (Gateway / BLE Central) "]
         RP2040["📟 Arduino Nano RP2040 Connect"]
-        LCD["📺 Display LCD 16x2 (I2C 0x27)"] <-->|SDA (A4) / SCL (A5)| RP2040
+        LCD["📺 16x2 LCD Display (I2C 0x27)<br/>(Code active / Hardware detachable)"] <-->|SDA A4 / SCL A5| RP2040
     end
 
     subgraph CLOUD[" ☁️ Cloud & Analytics (ThingSpeak) "]
-        RP2040 ==>|"Wi-Fi (WPA2) + MQTT (Port 1883)<br/>Payload: field1, field2, field3"| TS["📊 Broker MQTT ThingSpeak"]
+        RP2040 ==>|"Wi-Fi (WPA2) + MQTT (Port 1883)<br/>Payload: field1, field2, field3"| TS["📊 ThingSpeak MQTT Broker"]
     end
-
-
 ```
 
-### 1. Modulo Esterno (BLE Peripheral / Sensor Node)
+### 1. Outdoor Module (BLE Peripheral / Sensor Node)
 
 * **Hardware**: Arduino Nano 33 BLE Sense Rev2 (nRF52840 @ 64 MHz, ARM Cortex-M4F).
+* **Active Sensors**: On-board `HS300x` (Temperature & Relative Humidity) and `LPS22HB` (Barometric Pressure).
+* **Enclosure & Power Sub-system**: Housed inside a **provisional 3D/weatherproof enclosure** equipped with a self-sustaining power system:
+  * 5V monocrystalline solar panel integrated into the chassis.
+  * `CN3065` solar charge manager module.
+  * 1S 3.7V Li-Po battery.
+* **Operational Logic**:
+  1. Boots up and initializes BLE GATT services and characteristics.
+  2. Reads environmental parameters from on-board I2C sensors.
+  3. Updates GATT characteristic values and sends `NOTIFY` signals to connected central devices.
 
-* **Sensori attivi**: Sensore di Temperatura e Umidità integrato `HS300x`, Barometro integrato `LPS22HB`.
+### 2. Indoor Module (BLE Central / Gateway)
 
-* **Alimentazione**: Cella solare monocristallina 5V + Gestore di ricarica Li-Po `CN3065` + Batteria Li-Po 1S 3.7V.
+* **Hardware**: Arduino Nano RP2040 Connect (Raspberry Pi RP2040 dual-core @ 133 MHz, u-blox NINA-W102 Wi-Fi/BT module).
+* **Display Output**: 16x2 LCD screen with I2C backpack (PCF8574 chip, address `0x27`).
+* **Operational Logic**:
+  1. Initializes Wi-Fi interface and connects to the ThingSpeak MQTT broker.
+  2. Scans for BLE advertising packets matching device name `"StazioneMeteo"`.
+  3. Connects and subscribes to notifications for Temperature, Humidity, and Pressure.
+  4. Upon receiving new notifications, updates the local LCD display and publishes formatted MQTT payloads (`field1=temp&field2=umid&field3=pres`).
 
-* **Comportamento**:
+---
 
-  1. Esegue il boot e la configurazione dei servizi BLE.
+## ⚡ Schematics & Wiring
 
-  2. Acquisisce la tripletta di dati fisici dai sensori I2C di bordo.
+### 1. Outdoor Power Sub-system (Solar Harvesting & Battery Charger)
 
-  3. Aggiorna i valori delle tre caratteristiche GATT e invia una notifica `NOTIFY` ai client iscritti.
+```text
+[ 5V Solar Panel ] ──(+)──> [ CN3065 SOLAR+ ]
+                    ──(-)──> [ CN3065 SOLAR- ]
 
-  4. Entra in stato di risparmio energetico in attesa dell'intervallo successivo. (Nota: Il modulo BLE rimane però attivo, così come la connessione, consumando energia)
+[ 3.7V Li-Po Battery ] ──(+)──> [ CN3065 BAT+ ]
+                       ──(-)──> [ CN3065 BAT- ]
 
-### 2. Modulo Interno (BLE Central / Gateway)
-
-* **Hardware**: Arduino Nano RP2040 Connect (Raspberry Pi RP2040 dual-core @ 133 MHz, modulo Wi-Fi/BT u-blox NINA-W102).
-
-* **Display**: Schermo LCD 16x2 con interfaccia I2C (chip PCF8574, indirizzo `0x27`).
-
-* **Comportamento**:
-
-  1. Inizializza il Wi-Fi locale e si connette al broker MQTT di ThingSpeak.
-
-  2. Esegue uno scan BLE alla ricerca della periferca identificata come `"StazioneMeteo"`.
-
-  3. Si sottoscrive alle notifiche delle caratteristiche di temperatura, umidità e pressione.
-
-  4. Alla ricezione dei pacchetti, aggiorna il display LCD locale e genera la stringa di pubblicazione MQTT (`field1=temp&field2=umid&field3=pres`).
-
-## ⚡ Schemi Elettrici e Cablaggi
-
-### 1. Sotto-sistema di Alimentazione Solare (Modulo Esterno)
-
-Il modulo esterno è reso autonomo tramite un circuito di energy harvesting basato sul controller **CN3065**.
-
-```
-[Pannello Solare 5V] ──(+)──> [CN3065 SOLAR+]
-                     ──(-)──> [CN3065 SOLAR-]
-
-[Batteria Li-Po 3.7V] ──(+)──> [CN3065 BAT+]
-                      ──(-)──> [CN3065 BAT-]
-
-[CN3065 SYS+] ──[ Switch ON/OFF ]──> [Arduino Nano 33 BLE - VIN]
-[CN3065 SYS-] ────────────────────> [Arduino Nano 33 BLE - GND]
-
-
+[ CN3065 SYS+ ] ──[ ON/OFF Switch ]──> [ Arduino Nano 33 BLE - VIN ]
+[ CN3065 SYS- ] ────────────────────> [ Arduino Nano 33 BLE - GND ]
 ```
 
-> **Nota di Sicurezza Elettrica:** La batteria Li-Po deve essere provvista di scheda di protezione integrata (BMS PCM) per evitare sovra-scarica sotto i 3.0V. Il pin `VIN` dell'Arduino accetta tensioni comprese tra 4.5V e 21V per regolazione interna; l'alimentazione diretta a 3.7V-4.2V sfrutta la soglia di dropout permissiva del regolatore onboard.
+> ⚠️ **Electrical Safety Note:** The Li-Po cell must feature an integrated Protection Circuit Module (PCM/BMS) to prevent deep discharge below 3.0V.
 
-### 2. Collegamento Display LCD I2C (Modulo Interno)
+### 2. Indoor LCD Wiring (I2C Interface)
 
-| Pin Modulo I2C (LCD) | Pin Arduino Nano RP2040 Connect | Tensione / Segnale | 
-| ----- | ----- | ----- | 
-| **GND / VSS** | **GND** | Massa comune | 
-| **VCC / VDD** | **3V3** *(oppure VUSB 5V previo ponticello)* | Alimentazione 3.3V | 
-| **SDA** | **A4** | Linea Dati I2C | 
-| **SCL** | **A5** | Linea Clock I2C | 
+| I2C Backpack Pin | Arduino Nano RP2040 Connect Pin | Function / Logic Level |
+| :--- | :--- | :--- |
+| **GND / VSS** | **GND** | Ground reference |
+| **VCC / VDD** | **3V3** *(or VUSB 5V with bridge)* | Power Supply (3.3V) |
+| **SDA** | **A4** | I2C Data Line |
+| **SCL** | **A5** | I2C Clock Line |
 
-## 💻 Modello Dati e Comunicazione
+---
 
-### BLE GATT Service & Characteristics UUID
+## 💻 Data Model & Communication Protocol
+
+### BLE GATT Service & Characteristics UUIDs
 
 * **Service UUID**: `19B10000-E8F2-537E-4F6C-D104768A1214`
-
-  * **Temperature Characteristic**: `19B10001-E8F2-537E-4F6C-D104768A1214` (BLERead | BLENotify)
-
-  * **Humidity Characteristic**: `19B10002-E8F2-537E-4F6C-D104768A1214` (BLERead | BLENotify)
-
-  * **Pressure Characteristic**: `19B10003-E8F2-537E-4F6C-D104768A1214` (BLERead | BLENotify)
+  * **Temperature Characteristic**: `19B10001-E8F2-537E-4F6C-D104768A1214` (`BLERead` | `BLENotify`)
+  * **Humidity Characteristic**: `19B10002-E8F2-537E-4F6C-D104768A1214` (`BLERead` | `BLENotify`)
+  * **Pressure Characteristic**: `19B10003-E8F2-537E-4F6C-D104768A1214` (`BLERead` | `BLENotify`)
 
 ### MQTT Topic & Payload (ThingSpeak)
 
+* **Broker**: `mqtt3.thingspeak.com` (Port `1883`)
 * **Topic**: `channels/<SECRET_ID_CHANNEL>/publish`
-
 * **Payload Format**: `field1=<TEMP>&field2=<HUMID>&field3=<PRESS>`
 
-* **QoS Level**: `0` (At most once)
+---
 
-## 🛠️ Guida all'Installazione e Deploy
+## 🛠️ Setup & Configuration
 
-### 1. Clonazione del Repository
+### Repository Directory Layout
 
-```
-git clone https://github.com/secciax/Weather-Station-IoT-v1.git
-cd Weather-Station-IoT-v1
-
-
-```
-
-### 2. Configurazione Credenziali di Rete
-
-Per mantenere sicure le proprie chiavi privando il codice di valori hardcoded:
-
-1. Naviga nella cartella `Modulo_Interno/`.
-
-2. Troverai il file template `secrets_template.h`.
-
-3. Rinominalo in `secrets.h`.
-
-4. Compila le costanti con i tuoi parametri reali:
-
-```
-#define SECRET_SSID "NOME_DELLA_TUA_RETE_WIFI"
-#define SECRET_PASS "PASSWORD_WIFI"
-
-#define SECRET_MQTT_CLIENT_ID "CLIENT_ID_THINGSPEAK"
-#define SECRET_MQTT_USER      "USERNAME_MQTT_THINGSPEAK"
-#define SECRET_PASS_MQTT      "PASSWORD_MQTT_THINGSPEAK"
-
-#define SECRET_ID_CHANNEL     3410719UL  // ID Canale ThingSpeak (Suffisso UL)
-
-
+```text
+Weather-Station-IoT-v1/
+├── Modulo_Esterno.ino
+├── Modulo_Interno.ino
+├── secrets_template.h
+├── images/
+│   ├── moduli.jpeg
+│   ├── caseA.jpeg
+│   ├── caseB.jpeg
+│   └── dashboard.png
+└── README.md
 ```
 
-### 3. Dipendenze Librerie Arduino IDE
+### Arduino IDE Folder Requirements
 
-Assicurati di installare tramite l'Arduino Library Manager:
+Because the `.ino` files are stored at the repository root, perform these steps before compiling in Arduino IDE:
 
-* `ArduinoBLE`
+1. Create a dedicated folder matching each sketch name (e.g., `Modulo_Esterno/` for `Modulo_Esterno.ino` and `Modulo_Interno/` for `Modulo_Interno.ino`).
+2. Move `secrets_template.h` into the `Modulo_Interno/` directory alongside `Modulo_Interno.ino`.
+3. Rename `secrets_template.h` to `secrets.h` and provide your credentials:
 
-* `WiFiNINA` / `WiFi` (per RP2040 Connect)
+```cpp
+#define SECRET_SSID "YOUR_WIFI_SSID"
+#define SECRET_PASS "YOUR_WIFI_PASSWORD"
 
-* `PubSubClient` (di Nick O'Leary)
+#define SECRET_MQTT_CLIENT_ID "THINGSPEAK_MQTT_CLIENT_ID"
+#define SECRET_MQTT_USER      "THINGSPEAK_MQTT_USERNAME"
+#define SECRET_PASS_MQTT      "THINGSPEAK_MQTT_PASSWORD"
 
-* `LiquidCrystal_I2C`
+#define SECRET_ID_CHANNEL     3410719UL  // ThingSpeak Channel ID
+```
 
-* `Arduino_HS300x` e `Arduino_LPS22HB` (per Nano 33 BLE Sense Rev2)
+---
 
-## 🔍 Problemi Risolti e Lesson Learned
+## 🚀 System Limitations & Multi-Phase Roadmap
 
-Durante la progettazione e l'integrazione del prototipo v1 sono state affrontate e risolte diverse criticità hardware e software:
+### Current Phase 1 Limitations
 
-### 1. Contrasto e Alimentazione Display LCD a 3.3V
+1. **Bluetooth Power Overhead in Sleep Mode**: Even when placing the Outdoor MCU core into low-power sleep states, the **Bluetooth radio stack remains continuously active** to sustain advertising or GATT connection states. This persistent radio activity prevents deep microampere-level energy savings.
+2. **Coverage & Attenuation**: The 2.4 GHz BLE signal experiences rapid RF attenuation through walls, restricting node-to-gateway distances to 10–15 meters.
+3. **Infrastructure Dependence**: The indoor gateway requires a local Wi-Fi network to publish data to ThingSpeak.
 
-* **Problema**: Alimentando lo schermo LCD a 3.3V dal pin `3V3` dell'RP2040, il controller rispondeva all'indirizzo I2C `0x27`, ma il testo risultava del tutto sbiadito o visibile solo con angoli di visione estremi.
+### 🗺️ Multi-Phase Roadmap
 
-* **Causa**: I cristalli liquidi dei classici moduli 16x2 richiedono una tensione VDD vicina ai 5V per garantire il contrasto ottimale. A 3.3V la caduta di tensione sulla breadboard e sui jumper attenuava il segnale visibile.
+```mermaid
+flowchart TD
+    P1["<b>Phase 1: BLE & Wi-Fi Gateway (Current Implementation)</b><br/>• Dual-node BLE GATT architecture<br/>• Provisional solar enclosure with CN3065<br/>• MQTT cloud integration to ThingSpeak"]
+    P2["<b>Phase 2: LoRa / LoRaWAN Migration & Data Recovery</b><br/>• Replace BLE with 868 MHz LoRa LPWAN<br/>• True sub-GHz deep sleep (microamp-level power savings)<br/>• Extended range (kilometer-scale telemetry)<br/>• Local flash logging & packet loss recovery"]
+    P3["<b>Phase 3: AI / Edge AI / Fog AI Analytics</b><br/>• Context-dependent AI model deployment<br/>• Edge AI: On-device TinyML microclimate anomaly detection<br/>• Fog AI: Gateway-level forecasting & multi-sensor fusion"]
 
-* **Soluzione**: Pulizia dei contatti, riduzione della lunghezza dei cavi I2C e stabilizzazione del bus tramite inserimento di ritardi di avvio (`delay(250)`) prima della `lcd.init()` per permettere la carica dei condensatori del driver I2C.
+    P1 --> P2 --> P3
+```
 
-### 2. Duplicazione dei Pacchetti MQTT su Notifica BLE
+#### 📍 Phase 2: LoRa LPWAN Migration & Long-Range Data Recovery
+* **Transition to 868 MHz LoRa / LoRaWAN**: Replacing BLE with sub-GHz LoRa modules (e.g., SX1262 / Heltec nodes) will eliminate continuous radio activity, allowing the outdoor node to enter complete deep-sleep mode between telemetry bursts.
+* **Extended Range**: Scale communication range from meters to kilometers, making off-grid deployments in open fields feasible.
+* **Reliable Data Recovery**: Implement flash memory logging and data re-transmission protocols to recover lost telemetry packets after network disconnections.
 
-* **Problema**: Nel dataset esportato da ThingSpeak figuravano coppie di invii MQTT distanti pochissimi secondi l'uno dall'altro invece dell'intervallo fisso di 10 minuti.
+#### 📍 Phase 3: AI, Edge AI, and Fog AI Integration
+Depending on the deployment context and infrastructure capacity:
+* **Edge AI (TinyML on Sensor Nodes)**: Deploy lightweight neural networks directly on the outdoor microcontroller for on-device anomaly detection, adaptive sampling intervals, and sensor drift compensation.
+* **Fog AI (Gateway-level Intelligence)**: Utilize edge/fog gateways to run localized microclimate forecasting models, multi-station data fusion, and early weather alerts prior to cloud aggregation.
 
-* **Causa**: La funzione `gestisciStazioneEsterna()` valutava la condizione in OR logico (`caratTemp.valueUpdated() || caratUmid.valueUpdated() || ...`). Poiché le notifiche BLE delle 3 caratteristiche venivano ricevute in due cicli separati di `loop()`, la variabile `nuoviDatiPronti` veniva attivata due volte consecutive.
+---
 
-* **Soluzione**: Implementazione di un flag di sincronizzazione che attende l'aggiornamento di tutte e tre le caratteristiche prima di sollevare l'evento di pubblicazione MQTT.
+## 📜 License & Author
 
-### 3. Corretta Definizioni di Tipi Numetici (`UL`)
-
-* **Problema**: L'ID del canale ThingSpeak superava il limite massimo rappresentabile da un intero a 16 bit (`int` di default in C++ su alcune architetture).
-
-* **Soluzione**: Adozione del suffisso `UL` (`#define SECRET_ID_CHANNEL 3410719UL`) nel file `secrets.h` per forzare l'assegnazione esplicita del tipo `unsigned long`.
-
-## 🚀 Limiti della Versione 1.0 e Roadmap Futura (Perché LoRaWAN?)
-
-Sebbene la combinazione BLE + Wi-Fi/MQTT abbia dimostrato un'eccellente affidabilità in ambiente domestico, il sistema presenta dei limiti strutturali in ottica di monitoraggio meteo professionale:
-
-### Limiti Riscontrati (BLE & Wi-Fi)
-
-1. **Portata del BLE (Range limitato)**: Il segnale BLE a 2.4 GHz soffre di una forte attenuazione in presenza di muri perimetrali in cemento armato o ostacoli naturali, limitando la distanza tra modulo esterno e modulo interno a 10-15 metri.
-
-2. **Consumo energetico del Gateway Wi-Fi**: Il modulo interno necessita di alimentazione di rete continua a causa dell'assorbimento elevato dello stack Wi-Fi/MQTT durante la riconnessione.
-
-3. **Dipendenza da Infrastruttura Wi-Fi**: In scenari di monitoraggio rurale o agricolo (es. vigneti, campi) la copertura Wi-Fi domestica è assente.
-
-### 🔮 Roadmap Futura (Fase 2 - Tesi Specialistica / Evoluzione)
-
-* \[ \] **Migrazione del Modulo Esterno a LoRa / LoRaWAN (Heltec V3 / ESP32 + SX1262)**: Sostituzione del protocollo BLE con **LoRaWAN** operante a 868 MHz per coprire distanze fino a 5-10 km in campo aperto con elevata penetrazione degli ostacoli e consumo energetico nell'ordine dei microampere in Deep Sleep.
-
-* \[ \] **Infrastruttura Fog & Server Locale**: Realizzazione di un Gateway privato basato su **Raspberry Pi 4**, broker **Mosquitto MQTT**, database per serie temporali **InfluxDB** e dashboard **Grafana** locale.
-
-* \[ \] **TinyML & Edge AI**: Implementazione di modelli di apprendimento automatico direttamente sul microcontrollore esterno (es. modelli *Time Series Forecasting* per la previsione microclimatica locale a corto raggio).
-
-* \[ \] **Integrazione Pluviometro e Anemometro**: Aggiunta di sensori meccanici ad interrupt (interruzioni hardware su pin di wake-up) per la misura della piovosità e della velocità del vento.
-
-## 📜 Licenza
-
-Questo progetto è rilasciato sotto Licenza MIT. Consulta il file [LICENSE](LICENSE) per ulteriori dettagli.
-
-**Autore:** Federico Secciani
-
-**Contatto:** [GitHub Profile](https://github.com/secciax)
+* **Author:** Federico Secciani
+* **Repository:** [GitHub Profile](https://github.com/secciax)
+* **License:** This project is licensed under the [MIT License](LICENSE).
